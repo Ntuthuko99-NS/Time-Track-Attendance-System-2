@@ -1,0 +1,236 @@
+import React, { useState, useEffect } from "react";
+import { ntuthuko } from "@/api/ntuthukoClient";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+
+import { WifiOff, Wifi, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
+
+const STORAGE_KEY = "offline_time_entries";
+
+/* ------------------ Local Storage Helpers ------------------ */
+
+// Get all offline entries
+export const getOfflineEntries = () => {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+  } catch {
+    return [];
+  }
+};
+
+// Save a new offline entry
+export const saveOfflineEntry = (entry) => {
+  const entries = getOfflineEntries();
+
+  entries.push({
+    ...entry,
+    offline_id: Date.now(),
+    pending_sync: true,
+  });
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+};
+
+// Update an offline entry
+export const updateOfflineEntry = (id, updates) => {
+  const entries = getOfflineEntries().map((entry) =>
+    entry.offline_id === id ? { ...entry, ...updates } : entry
+  );
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+};
+
+// Remove an entry
+export const removeOfflineEntry = (id) => {
+  const entries = getOfflineEntries().filter(
+    (entry) => entry.offline_id !== id
+  );
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+};
+
+// Keep only unsynced entries
+export const clearSyncedEntries = () => {
+  const unsynced = getOfflineEntries().filter(
+    (entry) => entry.pending_sync
+  );
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(unsynced));
+};
+
+/* ------------------ Component ------------------ */
+
+export default function OfflineSync({ onSyncComplete }) {
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [syncing, setSyncing] = useState(false);
+
+  // Detect online/offline
+  useEffect(() => {
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
+
+  // Update pending count
+  useEffect(() => {
+    const entries = getOfflineEntries();
+    const pending = entries.filter((e) => e.pending_sync).length;
+    setPendingCount(pending);
+  }, [syncing]);
+
+  // Auto sync when back online
+  useEffect(() => {
+    if (isOnline && pendingCount > 0) {
+      syncOfflineEntries();
+    }
+  }, [isOnline]);
+
+  // Sync function
+  const syncOfflineEntries = async () => {
+    const entries = getOfflineEntries().filter(
+      (e) => e.pending_sync
+    );
+
+    if (!entries.length) return;
+
+    setSyncing(true);
+    let synced = 0;
+
+    for (const entry of entries) {
+      try {
+        // CLOCK IN
+        if (entry.type === "clock_in") {
+          const res = await ntuthuko.post("/time-entries", {
+            employee_id: entry.employee_id,
+            employee_name: entry.employee_name,
+            clock_in_time: entry.clock_in_time,
+            clock_in_location: entry.clock_in_location,
+            clock_in_method: entry.clock_in_method,
+            status: entry.status,
+            date: entry.date,
+            is_late: entry.is_late,
+          });
+
+          // Update employee status
+          if (entry.employee_db_id) {
+            await ntuthuko.put(`/employees/${entry.employee_db_id}`, {
+              is_clocked_in: true,
+              current_session_id: res.data.id,
+            });
+          }
+
+          removeOfflineEntry(entry.offline_id);
+          synced++;
+        }
+
+        // CLOCK OUT
+        if (entry.type === "clock_out") {
+          const sessionsRes = await ntuthuko.get(
+            `/time-entries?employee_id=${entry.employee_id}&status=active`
+          );
+
+          const activeSession = sessionsRes.data?.[0];
+
+          if (activeSession) {
+            await ntuthuko.put(`/time-entries/${activeSession.id}`, {
+              clock_out_time: entry.clock_out_time,
+              clock_out_location: entry.clock_out_location,
+              status: "completed",
+              total_hours: entry.total_hours,
+              overtime_hours: entry.overtime_hours,
+            });
+
+            if (entry.employee_db_id) {
+              await ntuthuko.put(
+                `/employees/${entry.employee_db_id}`,
+                {
+                  is_clocked_in: false,
+                  current_session_id: null,
+                }
+              );
+            }
+          }
+
+          removeOfflineEntry(entry.offline_id);
+          synced++;
+        }
+      } catch (error) {
+        console.error("Sync failed:", error);
+      }
+    }
+
+    setSyncing(false);
+
+    if (synced > 0) {
+      toast.success(`Synced ${synced} entries`);
+      onSyncComplete?.();
+    }
+
+    const remaining = getOfflineEntries().filter(
+      (e) => e.pending_sync
+    ).length;
+
+    setPendingCount(remaining);
+  };
+
+  // Hide if nothing to show
+  if (isOnline && pendingCount === 0) return null;
+
+  return (
+    <div
+      className={`flex justify-between items-center p-3 rounded-lg mb-4 ${
+        isOnline
+          ? "bg-emerald-50 border border-emerald-200"
+          : "bg-amber-50 border border-amber-200"
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        {isOnline ? (
+          <Wifi className="w-4 h-4 text-emerald-600" />
+        ) : (
+          <WifiOff className="w-4 h-4 text-amber-600" />
+        )}
+
+        <span
+          className={`text-sm font-medium ${
+            isOnline ? "text-emerald-700" : "text-amber-700"
+          }`}
+        >
+          {isOnline ? "Online" : "Offline Mode"}
+        </span>
+
+        {pendingCount > 0 && (
+          <Badge className="bg-amber-100 text-amber-700">
+            {pendingCount} pending
+          </Badge>
+        )}
+      </div>
+
+      {isOnline && pendingCount > 0 && (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={syncOfflineEntries}
+          disabled={syncing}
+        >
+          <RefreshCw
+            className={`w-4 h-4 mr-1 ${
+              syncing ? "animate-spin" : ""
+            }`}
+          />
+          Sync
+        </Button>
+      )}
+    </div>
+  );
+}
