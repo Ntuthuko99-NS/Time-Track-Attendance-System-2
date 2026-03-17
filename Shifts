@@ -1,0 +1,209 @@
+import React, { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+
+import {
+  Plus,
+  Clock,
+  MapPin,
+  Users,
+  Trash2,
+} from "lucide-react";
+
+import ShiftForm from "@/components/shifts/ShiftForm";
+
+const DAY_LABELS = {
+  monday: "Mon",
+  tuesday: "Tue",
+  wednesday: "Wed",
+  thursday: "Thu",
+  friday: "Fri",
+  saturday: "Sat",
+  sunday: "Sun",
+};
+
+export default function Shifts() {
+  const [shifts, setShifts] = useState([]);
+  const [employees, setEmployees] = useState([]);
+
+  const [showForm, setShowForm] = useState(false);
+  const [editingShift, setEditingShift] = useState(null);
+
+  // Load fake data (replace later with API)
+  useEffect(() => {
+    setShifts([]);
+    setEmployees([]);
+  }, []);
+
+  // Create or update shift
+  const handleSubmit = (data) => {
+    if (editingShift) {
+      // Update
+      const updated = shifts.map((s) =>
+        s.id === editingShift.id ? { ...s, ...data } : s
+      );
+      setShifts(updated);
+    } else {
+      // Create
+      const newShift = {
+        id: Date.now(),
+        ...data,
+        assigned_employees: [],
+      };
+      setShifts([...shifts, newShift]);
+    }
+
+    setShowForm(false);
+    setEditingShift(null);
+  };
+
+  // Delete shift
+  const deleteShift = (id) => {
+    const filtered = shifts.filter((s) => s.id !== id);
+    setShifts(filtered);
+  };
+
+  // Assign / remove employee
+  const toggleEmployee = (shiftId, employee) => {
+    const updated = shifts.map((shift) => {
+      if (shift.id !== shiftId) return shift;
+
+      const assigned = shift.assigned_employees || [];
+      const exists = assigned.find(
+        (e) => e.employee_id === employee.employee_id
+      );
+
+      let newAssigned;
+
+      if (exists) {
+        newAssigned = assigned.filter(
+          (e) => e.employee_id !== employee.employee_id
+        );
+      } else {
+        newAssigned = [
+          ...assigned,
+          {
+            employee_id: employee.employee_id,
+            employee_name: employee.full_name,
+          },
+        ];
+      }
+
+      return { ...shift, assigned_employees: newAssigned };
+    });
+
+    setShifts(updated);
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 p-6">
+      <div className="max-w-6xl mx-auto">
+
+        {/* Header */}
+        <div className="flex justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold">Shift Scheduling</h1>
+            <p className="text-gray-500">
+              Manage work shifts
+            </p>
+          </div>
+
+          <Button
+            onClick={() => {
+              setEditingShift(null);
+              setShowForm(true);
+            }}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Create Shift
+          </Button>
+        </div>
+
+        {/* Empty State */}
+        {shifts.length === 0 ? (
+          <div className="text-center bg-white p-10 rounded">
+            <Clock className="w-10 h-10 mx-auto text-gray-300 mb-2" />
+            <p>No shifts yet</p>
+          </div>
+        ) : (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {shifts.map((shift) => (
+              <Card key={shift.id}>
+                <CardHeader>
+                  <CardTitle>{shift.name}</CardTitle>
+                  <p className="text-sm text-gray-500">
+                    {shift.start_time} - {shift.end_time}
+                  </p>
+                </CardHeader>
+
+                <CardContent className="space-y-3">
+
+                  {/* Days */}
+                  <div className="flex gap-1 flex-wrap">
+                    {shift.days_of_week?.map((day) => (
+                      <Badge key={day}>
+                        {DAY_LABELS[day]}
+                      </Badge>
+                    ))}
+                  </div>
+
+                  {/* Location */}
+                  {shift.location && (
+                    <div className="flex items-center gap-2 text-sm text-gray-500">
+                      <MapPin className="w-4 h-4" />
+                      {shift.location}
+                    </div>
+                  )}
+
+                  {/* Employees */}
+                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                    <Users className="w-4 h-4" />
+                    {shift.assigned_employees?.length || 0} assigned
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setEditingShift(shift);
+                        setShowForm(true);
+                      }}
+                    >
+                      Edit
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => deleteShift(shift.id)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* Form */}
+        <ShiftForm
+          open={showForm}
+          onClose={() => {
+            setShowForm(false);
+            setEditingShift(null);
+          }}
+          onSubmit={handleSubmit}
+          shift={editingShift}
+        />
+      </div>
+    </div>
+  );
+}
