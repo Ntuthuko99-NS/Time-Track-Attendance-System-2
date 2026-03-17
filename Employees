@@ -1,0 +1,264 @@
+import React, { useState } from "react";
+import { ntuthuko } from "@/api/ntuthukoClient";
+
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+import { Plus, Search } from "lucide-react";
+import { toast } from "sonner";
+
+import EmployeeCard from "@/components/employees/EmployeeCard";
+import EmployeeForm from "@/components/employees/EmployeeForm";
+
+export default function Employees() {
+  const queryClient = useQueryClient();
+
+  /* ------------------ STATE ------------------ */
+  const [showForm, setShowForm] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState(null);
+  const [employeeToDelete, setEmployeeToDelete] = useState(null);
+
+  const [search, setSearch] = useState("");
+  const [role, setRole] = useState("all");
+  const [status, setStatus] = useState("active");
+
+  /* ------------------ FETCH EMPLOYEES ------------------ */
+  const { data: employees = [], isLoading } = useQuery({
+    queryKey: ["employees"],
+    queryFn: async () => {
+      const res = await ntuthuko.get("/employees");
+      return res.data;
+    },
+  });
+
+  /* ------------------ CREATE ------------------ */
+  const createEmployee = useMutation({
+    mutationFn: async (data) => {
+      return await ntuthuko.post("/employees", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["employees"] });
+      setShowForm(false);
+      toast.success("Employee created");
+    },
+  });
+
+  /* ------------------ UPDATE ------------------ */
+  const updateEmployee = useMutation({
+    mutationFn: async ({ id, data }) => {
+      return await ntuthuko.put(`/employees/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["employees"] });
+      setShowForm(false);
+      setEditingEmployee(null);
+      toast.success("Employee updated");
+    },
+  });
+
+  /* ------------------ DELETE ------------------ */
+  const deleteEmployee = useMutation({
+    mutationFn: async (id) => {
+      return await ntuthuko.delete(`/employees/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["employees"] });
+      setEmployeeToDelete(null);
+      toast.success("Employee deleted");
+    },
+  });
+
+  /* ------------------ HANDLERS ------------------ */
+
+  const handleSubmit = (data) => {
+    if (editingEmployee) {
+      updateEmployee.mutate({
+        id: editingEmployee.id,
+        data,
+      });
+    } else {
+      createEmployee.mutate(data);
+    }
+  };
+
+  const handleEdit = (employee) => {
+    setEditingEmployee(employee);
+    setShowForm(true);
+  };
+
+  const handleDelete = (employee) => {
+    setEmployeeToDelete(employee);
+  };
+
+  /* ------------------ FILTER ------------------ */
+
+  const filteredEmployees = employees.filter((emp) => {
+    const matchesSearch =
+      emp.full_name?.toLowerCase().includes(search.toLowerCase()) ||
+      emp.email?.toLowerCase().includes(search.toLowerCase()) ||
+      emp.employee_id?.toLowerCase().includes(search.toLowerCase());
+
+    const matchesRole = role === "all" || emp.role === role;
+
+    const matchesStatus =
+      status === "all" ||
+      (status === "active" && emp.is_active) ||
+      (status === "inactive" && !emp.is_active);
+
+    return matchesSearch && matchesRole && matchesStatus;
+  });
+
+  /* ------------------ UI ------------------ */
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="max-w-7xl mx-auto p-6 space-y-8">
+
+        {/* HEADER */}
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold">Employees</h1>
+            <p className="text-slate-500">
+              {employees.length} total employees
+            </p>
+          </div>
+
+          <Button
+            onClick={() => {
+              setEditingEmployee(null);
+              setShowForm(true);
+            }}
+          >
+            <Plus className="mr-2" /> Add Employee
+          </Button>
+        </div>
+
+        {/* FILTERS */}
+        <div className="flex gap-4 flex-wrap">
+
+          {/* SEARCH */}
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+            <Input
+              placeholder="Search employees..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+
+          {/* ROLE */}
+          <Select value={role} onValueChange={setRole}>
+            <SelectTrigger className="w-[150px]">
+              <SelectValue placeholder="Role" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Roles</SelectItem>
+              <SelectItem value="employee">Employee</SelectItem>
+              <SelectItem value="manager">Manager</SelectItem>
+              <SelectItem value="admin">Admin</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* STATUS */}
+          <Select value={status} onValueChange={setStatus}>
+            <SelectTrigger className="w-[150px]">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* LIST */}
+        {isLoading ? (
+          <p>Loading employees...</p>
+        ) : filteredEmployees.length === 0 ? (
+          <div className="text-center py-16 text-slate-400">
+            <Search className="mx-auto mb-3" />
+            <p>No employees found</p>
+          </div>
+        ) : (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredEmployees.map((emp) => (
+              <EmployeeCard
+                key={emp.id}
+                employee={emp}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* FORM */}
+        <EmployeeForm
+          open={showForm}
+          onClose={() => {
+            setShowForm(false);
+            setEditingEmployee(null);
+          }}
+          onSubmit={handleSubmit}
+          employee={editingEmployee}
+          loading={
+            createEmployee.isPending || updateEmployee.isPending
+          }
+        />
+
+        {/* DELETE DIALOG */}
+        <AlertDialog
+          open={!!employeeToDelete}
+          onOpenChange={() => setEmployeeToDelete(null)}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                Delete Employee?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete{" "}
+                {employeeToDelete?.full_name}?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() =>
+                  deleteEmployee.mutate(employeeToDelete.id)
+                }
+                className="bg-red-600"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+      </div>
+    </div>
+  );
+}
