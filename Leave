@@ -1,0 +1,261 @@
+import React, { useState, useEffect } from "react";
+import { ntuthuko } from "@/api/ntuthukoClient";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Plus,
+  Calendar,
+  Clock,
+  CalendarDays,
+  Users,
+} from "lucide-react";
+
+import LeaveRequestForm from "@/components/leave/LeaveRequestForm";
+import LeaveRequestCard from "@/components/leave/LeaveRequestCard";
+import LeaveCalendar from "@/components/leave/LeaveCalendar";
+import LeaveBalanceCard from "@/components/leave/LeaveBalanceCard";
+import TeamAvailability from "@/components/leave/TeamAvailability";
+
+export default function Leave() {
+  const [showForm, setShowForm] = useState(false);
+  const [employees, setEmployees] = useState([]);
+  const [leaveRequests, setLeaveRequests] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [currentEmployee, setCurrentEmployee] = useState(null);
+  const [activeTab, setActiveTab] = useState("pending");
+
+  // Load data (replace with real API later)
+  useEffect(() => {
+    // Fake data for now
+    const fakeUser = {
+      email: "thabiso@example.com",
+      full_name: "Thabiso Mngomezulu",
+      role: "admin",
+    };
+
+    const fakeEmployees = [
+      {
+        employee_id: 1,
+        email: "thabiso@example.com",
+        role: "admin",
+        annual_leave_balance: 21,
+        sick_leave_balance: 30,
+      },
+    ];
+
+    const fakeRequests = [];
+
+    setCurrentUser(fakeUser);
+    setEmployees(fakeEmployees);
+    setLeaveRequests(fakeRequests);
+  }, []);
+
+  // Match logged-in user to employee
+  useEffect(() => {
+    if (currentUser && employees.length > 0) {
+      const emp = employees.find(
+        (e) => e.email === currentUser.email
+      );
+      setCurrentEmployee(emp);
+    }
+  }, [currentUser, employees]);
+
+  // Actions
+  const handleCreate = (data) => {
+    setLeaveRequests((prev) => [
+      ...prev,
+      { ...data, id: Date.now(), status: "pending" },
+    ]);
+    setShowForm(false);
+  };
+
+  const handleApprove = (id) => {
+    setLeaveRequests((prev) =>
+      prev.map((r) =>
+        r.id === id ? { ...r, status: "approved" } : r
+      )
+    );
+  };
+
+  const handleReject = (id) => {
+    setLeaveRequests((prev) =>
+      prev.map((r) =>
+        r.id === id ? { ...r, status: "rejected" } : r
+      )
+    );
+  };
+
+  // Role check
+  const isManager =
+    currentEmployee?.role === "manager" ||
+    currentEmployee?.role === "admin" ||
+    currentUser?.role === "admin";
+
+  // Filters
+  const myRequests = leaveRequests.filter(
+    (r) => r.employee_id === currentEmployee?.employee_id
+  );
+
+  const pendingRequests = leaveRequests.filter(
+    (r) => r.status === "pending"
+  );
+
+  const approvedRequests = leaveRequests.filter(
+    (r) => r.status === "approved"
+  );
+
+  const rejectedRequests = leaveRequests.filter(
+    (r) => r.status === "rejected"
+  );
+
+  return (
+    <div className="min-h-screen bg-slate-50 p-6">
+      {/* Header */}
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h1 className="text-2xl font-bold">Leave Management</h1>
+          <p className="text-gray-500">
+            Request and manage your leave
+          </p>
+        </div>
+
+        <Button onClick={() => setShowForm(true)}>
+          <Plus className="w-4 h-4 mr-2" />
+          Request Leave
+        </Button>
+      </div>
+
+      {/* Simple Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-sm text-gray-500">Annual Leave</p>
+            <p className="text-xl font-bold">
+              {currentEmployee?.annual_leave_balance || 21}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-sm text-gray-500">Sick Leave</p>
+            <p className="text-xl font-bold">
+              {currentEmployee?.sick_leave_balance || 30}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-sm text-gray-500">Pending</p>
+            <p className="text-xl font-bold text-yellow-600">
+              {pendingRequests.length}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-sm text-gray-500">Approved</p>
+            <p className="text-xl font-bold text-green-600">
+              {approvedRequests.length}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          <TabsTrigger value="pending">
+            Pending
+            {pendingRequests.length > 0 && (
+              <Badge className="ml-2">
+                {pendingRequests.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+
+          <TabsTrigger value="my">My Requests</TabsTrigger>
+          <TabsTrigger value="calendar">
+            <CalendarDays className="w-4 h-4 mr-1" />
+            Calendar
+          </TabsTrigger>
+
+          {isManager && (
+            <TabsTrigger value="team">
+              <Users className="w-4 h-4 mr-1" />
+              Team
+            </TabsTrigger>
+          )}
+        </TabsList>
+
+        {/* Pending */}
+        <TabsContent value="pending">
+          {pendingRequests.length === 0 ? (
+            <p className="text-gray-500 mt-6">
+              No pending requests
+            </p>
+          ) : (
+            <div className="grid gap-4 mt-4">
+              {pendingRequests.map((req) => (
+                <LeaveRequestCard
+                  key={req.id}
+                  request={req}
+                  onApprove={() => handleApprove(req.id)}
+                  onReject={() => handleReject(req.id)}
+                  showActions={isManager}
+                />
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* My Requests */}
+        <TabsContent value="my">
+          {myRequests.length === 0 ? (
+            <p className="text-gray-500 mt-6">
+              No requests yet
+            </p>
+          ) : (
+            <div className="grid gap-4 mt-4">
+              {myRequests.map((req) => (
+                <LeaveRequestCard key={req.id} request={req} />
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Calendar */}
+        <TabsContent value="calendar">
+          <LeaveCalendar
+            leaveRequests={leaveRequests}
+            employees={employees}
+          />
+        </TabsContent>
+
+        {/* Team (Manager only) */}
+        {isManager && (
+          <TabsContent value="team">
+            <TeamAvailability
+              employees={employees}
+              leaveRequests={leaveRequests}
+            />
+          </TabsContent>
+        )}
+      </Tabs>
+
+      {/* Form */}
+      {currentEmployee && (
+        <LeaveRequestForm
+          open={showForm}
+          onClose={() => setShowForm(false)}
+          onSubmit={handleCreate}
+          employee={currentEmployee}
+        />
+      )}
+    </div>
+  );
+}
