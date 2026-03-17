@@ -1,0 +1,123 @@
+import React from "react";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+
+import {
+  LogIn,
+  LogOut,
+  Clock,
+  AlertCircle,
+} from "lucide-react";
+
+import { formatDistanceToNow } from "date-fns";
+
+export default function RecentActivity({ timeEntries = [] }) {
+
+  /* ------------------ GET RECENT ENTRIES ------------------ */
+  const recentEntries = [...timeEntries]
+    .sort((a, b) => {
+      const dateA = new Date(a.updated_date || a.created_date);
+      const dateB = new Date(b.updated_date || b.created_date);
+      return dateB - dateA;
+    })
+    .slice(0, 10);
+
+  /* ------------------ HELPERS ------------------ */
+
+  // Pick icon based on status
+  const getIcon = (status) => {
+    switch (status) {
+      case "active":
+        return <LogIn className="w-4 h-4 text-emerald-500" />;
+      case "completed":
+        return <LogOut className="w-4 h-4 text-blue-500" />;
+      case "auto_closed":
+        return <AlertCircle className="w-4 h-4 text-amber-500" />;
+      default:
+        return <Clock className="w-4 h-4 text-slate-400" />;
+    }
+  };
+
+  // Generate readable text
+  const getText = (entry) => {
+    switch (entry.status) {
+      case "active":
+        return "clocked in";
+      case "completed":
+        return `clocked out (${entry.total_hours?.toFixed(1) || 0}h)`;
+      case "auto_closed":
+        return "auto-closed";
+      default:
+        return "updated activity";
+    }
+  };
+
+  /* ------------------ UI ------------------ */
+
+  return (
+    <Card className="shadow-sm">
+
+      {/* HEADER */}
+      <CardHeader>
+        <CardTitle className="text-lg">
+          Recent Activity
+        </CardTitle>
+      </CardHeader>
+
+      {/* CONTENT */}
+      <CardContent>
+        <div className="space-y-4">
+
+          {/* EMPTY STATE */}
+          {recentEntries.length === 0 && (
+            <div className="text-center py-8 text-slate-400">
+              <Clock className="mx-auto mb-2 opacity-50" />
+              <p>No recent activity</p>
+            </div>
+          )}
+
+          {/* LIST */}
+          {recentEntries.map((entry) => {
+            const activityTime =
+              entry.updated_date || entry.clock_in_time;
+
+            return (
+              <div
+                key={entry.id}
+                className="flex items-start gap-3"
+              >
+                {/* ICON */}
+                <div className="p-2 bg-slate-100 rounded-lg">
+                  {getIcon(entry.status)}
+                </div>
+
+                {/* TEXT */}
+                <div className="flex-1">
+                  <p className="text-sm">
+                    <span className="font-medium">
+                      {entry.employee_name}
+                    </span>{" "}
+                    {getText(entry)}
+                  </p>
+
+                  <p className="text-xs text-slate-400">
+                    {formatDistanceToNow(new Date(activityTime), {
+                      addSuffix: true,
+                    })}
+                  </p>
+                </div>
+
+                {/* OVERTIME BADGE */}
+                {entry.overtime_hours > 0 && (
+                  <Badge className="text-xs bg-amber-50 text-amber-600 border border-amber-200">
+                    +{entry.overtime_hours.toFixed(1)}h OT
+                  </Badge>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
