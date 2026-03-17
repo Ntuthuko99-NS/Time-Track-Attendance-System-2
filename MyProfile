@@ -1,0 +1,279 @@
+import React, { useState, useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+
+import {
+  User,
+  Clock,
+  Mail,
+  Phone,
+  Building2,
+} from "lucide-react";
+
+import {
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  parseISO,
+  isWithinInterval,
+} from "date-fns";
+
+import ClockWidget from "@/components/clock/ClockWidget";
+import TimesheetTable from "@/components/timesheet/TimesheetTable";
+
+export default function MyProfile() {
+  const [currentUser, setCurrentUser] = useState(null);
+  const [employees, setEmployees] = useState([]);
+  const [timeEntries, setTimeEntries] = useState([]);
+  const [leaveRequests, setLeaveRequests] = useState([]);
+  const [currentEmployee, setCurrentEmployee] = useState(null);
+
+  // Load fake data (replace with API later)
+  useEffect(() => {
+    const fakeUser = {
+      email: "thabiso@example.com",
+      full_name: "Thabiso Mngomezulu",
+      role: "admin",
+    };
+
+    const fakeEmployees = [
+      {
+        employee_id: 1,
+        full_name: "Thabiso Mngomezulu",
+        email: "thabiso@example.com",
+        role: "admin",
+        department: "IT",
+        phone: "+27 68 411 3772",
+        annual_leave_balance: 21,
+        sick_leave_balance: 30,
+        expected_daily_hours: 8,
+        is_clocked_in: true,
+      },
+    ];
+
+    const fakeEntries = [];
+    const fakeLeave = [];
+
+    setCurrentUser(fakeUser);
+    setEmployees(fakeEmployees);
+    setTimeEntries(fakeEntries);
+    setLeaveRequests(fakeLeave);
+  }, []);
+
+  // Match user to employee
+  useEffect(() => {
+    if (currentUser && employees.length > 0) {
+      const emp = employees.find(
+        (e) => e.email === currentUser.email
+      );
+      setCurrentEmployee(emp);
+    }
+  }, [currentUser, employees]);
+
+  // If no profile
+  if (!currentEmployee) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <User className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+          <h2 className="font-semibold">Profile Not Found</h2>
+          <p className="text-gray-500">
+            Contact admin to set up your profile
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Filter data
+  const myEntries = timeEntries.filter(
+    (e) => e.employee_id === currentEmployee.employee_id
+  );
+
+  const myLeave = leaveRequests.filter(
+    (r) => r.employee_id === currentEmployee.employee_id
+  );
+
+  // Dates
+  const today = new Date();
+  const weekStart = startOfWeek(today, { weekStartsOn: 1 });
+  const weekEnd = endOfWeek(today, { weekStartsOn: 1 });
+  const monthStart = startOfMonth(today);
+  const monthEnd = endOfMonth(today);
+
+  // Weekly & Monthly entries
+  const weeklyEntries = myEntries.filter((e) =>
+    isWithinInterval(parseISO(e.date), {
+      start: weekStart,
+      end: weekEnd,
+    })
+  );
+
+  const monthlyEntries = myEntries.filter((e) =>
+    isWithinInterval(parseISO(e.date), {
+      start: monthStart,
+      end: monthEnd,
+    })
+  );
+
+  // Stats
+  const weeklyHours = weeklyEntries.reduce(
+    (sum, e) => sum + (e.total_hours || 0),
+    0
+  );
+
+  const monthlyHours = monthlyEntries.reduce(
+    (sum, e) => sum + (e.total_hours || 0),
+    0
+  );
+
+  const monthlyOvertime = monthlyEntries.reduce(
+    (sum, e) => sum + (e.overtime_hours || 0),
+    0
+  );
+
+  const expectedWeeklyHours =
+    (currentEmployee.expected_daily_hours || 8) * 5;
+
+  // Leave calculations
+  const approvedLeave = myLeave.filter(
+    (r) => r.status === "approved"
+  );
+
+  const usedAnnual = approvedLeave
+    .filter((r) => r.leave_type === "annual")
+    .reduce((sum, r) => sum + r.total_days, 0);
+
+  const usedSick = approvedLeave
+    .filter((r) => r.leave_type === "sick")
+    .reduce((sum, r) => sum + r.total_days, 0);
+
+  return (
+    <div className="min-h-screen bg-slate-50 p-6">
+
+      {/* Profile Header */}
+      <Card className="mb-6">
+        <CardContent className="pt-6">
+          <div className="flex items-center gap-4">
+            <Avatar className="h-16 w-16">
+              <AvatarImage src={currentEmployee.profile_image} />
+              <AvatarFallback>
+                {currentEmployee.full_name
+                  ?.split(" ")
+                  .map((n) => n[0])
+                  .join("")
+                  .slice(0, 2)}
+              </AvatarFallback>
+            </Avatar>
+
+            <div>
+              <h1 className="text-xl font-bold">
+                {currentEmployee.full_name}
+              </h1>
+              <p className="text-gray-500">
+                {currentEmployee.department}
+              </p>
+            </div>
+
+            {currentEmployee.is_clocked_in && (
+              <Badge className="ml-auto bg-green-500">
+                Working
+              </Badge>
+            )}
+          </div>
+
+          {/* Info */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 text-sm text-gray-600">
+            <div className="flex items-center gap-2">
+              <Mail className="w-4 h-4" />
+              {currentEmployee.email}
+            </div>
+
+            {currentEmployee.phone && (
+              <div className="flex items-center gap-2">
+                <Phone className="w-4 h-4" />
+                {currentEmployee.phone}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <Building2 className="w-4 h-4" />
+              {currentEmployee.department}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4" />
+              ID: {currentEmployee.employee_id}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid lg:grid-cols-3 gap-6">
+
+        {/* Left */}
+        <div className="space-y-6">
+          <ClockWidget employee={currentEmployee} />
+
+          {/* Weekly Progress */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Weekly Progress</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p>
+                {weeklyHours.toFixed(1)} / {expectedWeeklyHours} hrs
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Leave */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Leave</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p>Annual: {21 - usedAnnual} days</p>
+              <p>Sick: {30 - usedSick} days</p>
+              <p className="text-yellow-600">
+                Pending:{" "}
+                {myLeave.filter((r) => r.status === "pending").length}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Right */}
+        <div className="lg:col-span-2 space-y-6">
+
+          {/* Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Card><CardContent className="p-4">{weeklyHours.toFixed(1)}h (Week)</CardContent></Card>
+            <Card><CardContent className="p-4">{monthlyHours.toFixed(1)}h (Month)</CardContent></Card>
+            <Card><CardContent className="p-4">{monthlyOvertime.toFixed(1)}h OT</CardContent></Card>
+            <Card><CardContent className="p-4">{monthlyEntries.length} Days</CardContent></Card>
+          </div>
+
+          {/* Timesheet */}
+          <Tabs defaultValue="week">
+            <TabsList>
+              <TabsTrigger value="week">Week</TabsTrigger>
+              <TabsTrigger value="month">Month</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="week">
+              <TimesheetTable entries={weeklyEntries} />
+            </TabsContent>
+
+            <TabsContent value="month">
+              <TimesheetTable entries={monthlyEntries} />
+            </TabsContent>
+          </Tabs>
+        </div>
+      </div>
+    </div>
+  );
+}
