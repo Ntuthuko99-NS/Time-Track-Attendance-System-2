@@ -1,0 +1,267 @@
+import React, { useState } from "react";
+import { ntuthuko } from "@/api/ntuthukoClient";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+
+import {
+  Bell,
+  Clock,
+  AlertTriangle,
+  UserX,
+  TrendingUp,
+  Check,
+  X,
+  Mail,
+  RefreshCw,
+} from "lucide-react";
+
+import { formatDistanceToNow } from "date-fns";
+import { toast } from "sonner";
+import { checkShiftAlerts, sendAlertEmail } from "./AlertService";
+
+// Icons for each alert type
+const ALERT_ICONS = {
+  shift_reminder: Clock,
+  late_arrival: AlertTriangle,
+  missed_shift: UserX,
+  overtime_warning: TrendingUp,
+  forgot_clock_out: Clock,
+};
+
+// Colors for each alert type
+const ALERT_COLORS = {
+  shift_reminder: "bg-blue-50 text-blue-700 border-blue-200",
+  late_arrival: "bg-amber-50 text-amber-700 border-amber-200",
+  missed_shift: "bg-red-50 text-red-700 border-red-200",
+  overtime_warning: "bg-purple-50 text-purple-700 border-purple-200",
+  forgot_clock_out: "bg-orange-50 text-orange-700 border-orange-200",
+};
+
+export default function AlertsPanel({ showAll = false }) {
+  const queryClient = useQueryClient();
+  const [checking, setChecking] = useState(false);
+
+  // Fetch alerts
+  const { data: alerts = [], isLoading } = useQuery({
+    queryKey: ["alerts"],
+    queryFn: async () => {
+      const res = await ntuthuko.get("/alerts?limit=50&sort=-created_date");
+      return res.data || [];
+    },
+    refetchInterval: 60000,
+  });
+
+  // Fetch employees
+  const { data: employees = [] } = useQuery({
+    queryKey: ["employees"],
+    queryFn: async () => {
+      const res = await ntuthuko.get("/employees");
+      return res.data || [];
+    },
+  });
+
+  // Update alert (read/dismiss)
+  const updateAlert = useMutation({
+    mutationFn: async ({ id, data }) => {
+      await ntuthuko.put(`/alerts/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["alerts"] });
+    },
+  });
+
+  // Check and generate alerts
+  const handleCheckAlerts = async () => {
+    setChecking(true);
+
+    const newAlerts = await checkShiftAlerts();
+    queryClient.invalidateQueries({ queryKey: ["alerts"] });
+
+    if (newAlerts.length > 0) {
+      toast.success(`${newAlerts.length} new alerts generated`);
+    } else {
+      toast.info("No new alerts");
+    }
+
+    setChecking(false);
+  };
+
+  // Actions
+  const handleDismiss = (alert) => {
+    updateAlert.mutate({ id: alert.id, data: { status: "dismissed" } });
+  };
+
+  const handleMarkRead = (alert) => {
+    updateAlert.mutate({ id: alert.id, data: { status: "read" } });
+  };
+
+  const handleSendEmail = async (alert) => {
+    const employee = employees.find(
+      (e) => e.employee_id === alert.employee_id
+    );
+
+    if (!employee?.email) return;
+
+    const success = await sendAlertEmail(alert, employee.email);
+
+    if (success) {
+      toast.success("Email sent");
+      queryClient.invalidateQueries({ queryKey: ["alerts"] });
+    } else {
+      toast.error("Failed to send email");
+    }
+  };
+
+  // Filter alerts
+  const displayAlerts = showAll
+    ? alerts
+    : alerts.filter(
+        (a) => a.status === "pending" || a.status === "sent"
+      );
+
+  const pendingCount = alerts.filter(
+    (a) => a.status === "pending"
+  ).length;
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader className="pb-3 flex justify-between items-center">
+        <div className="flex items-center gap-2">
+          <CardTitle>Alerts</CardTitle>
+          {pendingCount > 0 && (
+            <Badge className="bg-red-500">{pendingCount}</Badge>
+          )}
+        </div>
+
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleCheckAlerts}
+          disabled={checking}
+        >
+          <RefreshCw
+            className={`w-4 h-4 mr-1 ${
+              checking ? "animate-spin" : ""
+            }`}
+          />
+          Check
+        </Button>
+      </CardHeader>
+
+      <CardContent className="p-0">
+        <ScrollArea className="h-[400px]">
+          {isLoading ? (
+            <p className="p-4 text-center text-slate-400">
+              Loading alerts...
+            </p>
+          ) : displayAlerts.length === 0 ? (
+            <div className="p-8 text-center">
+              <Bell className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+              <p className="text-slate-500">No alerts</p>
+            </div>
+          ) : (
+            <div className="divide-y">
+              {displayAlerts.map((alert) => {
+                const Icon =
+                  ALERT_ICONS[alert.type] || Bell;
+
+                const color =
+                  ALERT_COLORS[alert.type] ||
+                  "bg-slate-50 text-slate-700";
+
+                return (
+                  <div
+                    key={alert.id}
+                    className={`p-4 hover:bg-slate-50 ${
+                      alert.status === "pending"
+                        ? "bg-blue-50/30"
+                        : ""
+                    }`}
+                  >
+                    <div className="flex gap-3">
+                      <div
+                        className={`p-2 rounded-lg ${color}`}
+                      >
+                        <Icon className="w-4 h-4" />
+                      </div>
+
+                      <div className="flex-1">
+                        <div className="flex justify-between">
+                          <div>
+                            <p className="font-medium text-sm">
+                              {alert.employee_name ||
+                                "System Alert"}
+                            </p>
+                            <p className="text-sm text-slate-600">
+                              {alert.message}
+                            </p>
+                          </div>
+
+                          <Badge
+                            variant="outline"
+                            className={color}
+                          >
+                            {alert.type.replace("_", " ")}
+                          </Badge>
+                        </div>
+
+                        <div className="flex justify-between mt-2 items-center">
+                          <span className="text-xs text-slate-400">
+                            {formatDistanceToNow(
+                              new Date(alert.created_date),
+                              { addSuffix: true }
+                            )}
+                          </span>
+
+                          <div className="flex gap-1">
+                            {alert.status === "pending" && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() =>
+                                    handleSendEmail(alert)
+                                  }
+                                >
+                                  <Mail className="w-3 h-3" />
+                                </Button>
+
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() =>
+                                    handleMarkRead(alert)
+                                  }
+                                >
+                                  <Check className="w-3 h-3" />
+                                </Button>
+                              </>
+                            )}
+
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() =>
+                                handleDismiss(alert)
+                              }
+                            >
+                              <X className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </ScrollArea>
+      </CardContent>
+    </Card>
+  );
+}
