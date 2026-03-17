@@ -1,0 +1,335 @@
+import React, { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+
+import {
+  Building2,
+  Clock,
+  MapPin,
+  Save,
+  Plus,
+  Trash2,
+} from "lucide-react";
+
+export default function Settings() {
+  const [settings, setSettings] = useState(null);
+  const [hasChanges, setHasChanges] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  // Load default settings (replace with API later)
+  useEffect(() => {
+    const defaultSettings = {
+      company_name: "",
+      default_daily_hours: 8,
+      default_weekly_hours: 40,
+      week_start_day: "monday",
+      overtime_multiplier: 1.5,
+      enable_geofencing: false,
+      geofence_radius_meters: 100,
+      office_locations: [],
+      auto_clock_out_hours: 12,
+      grace_period_minutes: 15,
+      currency: "ZAR",
+      timezone: "Africa/Johannesburg",
+    };
+
+    setSettings(defaultSettings);
+    setLoading(false);
+  }, []);
+
+  // Handle field changes
+  const handleChange = (field, value) => {
+    setSettings((prev) => ({ ...prev, [field]: value }));
+    setHasChanges(true);
+  };
+
+  // Add location
+  const addLocation = () => {
+    setSettings((prev) => ({
+      ...prev,
+      office_locations: [
+        ...prev.office_locations,
+        { name: "", address: "", latitude: 0, longitude: 0 },
+      ],
+    }));
+    setHasChanges(true);
+  };
+
+  // Update location
+  const updateLocation = (index, field, value) => {
+    const updated = [...settings.office_locations];
+    updated[index][field] = value;
+
+    setSettings((prev) => ({
+      ...prev,
+      office_locations: updated,
+    }));
+
+    setHasChanges(true);
+  };
+
+  // Remove location
+  const removeLocation = (index) => {
+    const updated = settings.office_locations.filter(
+      (_, i) => i !== index
+    );
+
+    setSettings((prev) => ({
+      ...prev,
+      office_locations: updated,
+    }));
+
+    setHasChanges(true);
+  };
+
+  // Save (replace with API later)
+  const handleSave = () => {
+    console.log("Saving settings:", settings);
+    setHasChanges(false);
+    alert("Settings saved!");
+  };
+
+  if (loading || !settings) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p>Loading...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 p-6">
+      <div className="max-w-4xl mx-auto">
+
+        {/* Header */}
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h1 className="text-2xl font-bold">Settings</h1>
+            <p className="text-gray-500">
+              Configure your system
+            </p>
+          </div>
+
+          <Button onClick={handleSave} disabled={!hasChanges}>
+            <Save className="w-4 h-4 mr-2" />
+            Save Changes
+          </Button>
+        </div>
+
+        <div className="space-y-6">
+
+          {/* Company Info */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Company Info</CardTitle>
+              <CardDescription>
+                Basic company details
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent className="space-y-4">
+              <div>
+                <Label>Company Name</Label>
+                <Input
+                  value={settings.company_name}
+                  onChange={(e) =>
+                    handleChange("company_name", e.target.value)
+                  }
+                />
+              </div>
+
+              <div>
+                <Label>Currency</Label>
+                <Select
+                  value={settings.currency}
+                  onValueChange={(v) =>
+                    handleChange("currency", v)
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ZAR">ZAR</SelectItem>
+                    <SelectItem value="USD">USD</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Working Hours */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Working Hours</CardTitle>
+            </CardHeader>
+
+            <CardContent className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Daily Hours</Label>
+                <Input
+                  type="number"
+                  value={settings.default_daily_hours}
+                  onChange={(e) =>
+                    handleChange(
+                      "default_daily_hours",
+                      Number(e.target.value)
+                    )
+                  }
+                />
+              </div>
+
+              <div>
+                <Label>Weekly Hours</Label>
+                <Input
+                  type="number"
+                  value={settings.default_weekly_hours}
+                  onChange={(e) =>
+                    handleChange(
+                      "default_weekly_hours",
+                      Number(e.target.value)
+                    )
+                  }
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Location Settings */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Location Settings</CardTitle>
+            </CardHeader>
+
+            <CardContent className="space-y-4">
+              <div className="flex justify-between">
+                <span>Enable Geofencing</span>
+                <Switch
+                  checked={settings.enable_geofencing}
+                  onCheckedChange={(v) =>
+                    handleChange("enable_geofencing", v)
+                  }
+                />
+              </div>
+
+              {settings.enable_geofencing && (
+                <>
+                  <Separator />
+
+                  <div>
+                    <Label>Radius (meters)</Label>
+                    <Input
+                      type="number"
+                      value={settings.geofence_radius_meters}
+                      onChange={(e) =>
+                        handleChange(
+                          "geofence_radius_meters",
+                          Number(e.target.value)
+                        )
+                      }
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between mb-2">
+                      <Label>Locations</Label>
+                      <Button
+                        size="sm"
+                        onClick={addLocation}
+                      >
+                        <Plus className="w-4 h-4 mr-1" />
+                        Add
+                      </Button>
+                    </div>
+
+                    {settings.office_locations.map((loc, i) => (
+                      <div
+                        key={i}
+                        className="p-3 bg-gray-100 rounded mb-2"
+                      >
+                        <Input
+                          placeholder="Name"
+                          value={loc.name}
+                          onChange={(e) =>
+                            updateLocation(
+                              i,
+                              "name",
+                              e.target.value
+                            )
+                          }
+                        />
+
+                        <Input
+                          placeholder="Address"
+                          value={loc.address}
+                          onChange={(e) =>
+                            updateLocation(
+                              i,
+                              "address",
+                              e.target.value
+                            )
+                          }
+                        />
+
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="Lat"
+                            type="number"
+                            value={loc.latitude}
+                            onChange={(e) =>
+                              updateLocation(
+                                i,
+                                "latitude",
+                                Number(e.target.value)
+                              )
+                            }
+                          />
+                          <Input
+                            placeholder="Lng"
+                            type="number"
+                            value={loc.longitude}
+                            onChange={(e) =>
+                              updateLocation(
+                                i,
+                                "longitude",
+                                Number(e.target.value)
+                              )
+                            }
+                          />
+                        </div>
+
+                        <Button
+                          variant="ghost"
+                          onClick={() => removeLocation(i)}
+                        >
+                          <Trash2 className="w-4 h-4 text-red-500" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
