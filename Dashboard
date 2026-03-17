@@ -1,0 +1,220 @@
+import React, { useState, useEffect } from "react";
+import { ntuthuko } from "@/api/ntuthukoClient";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
+import {
+  format,
+  startOfWeek,
+  endOfWeek,
+  parseISO,
+  isWithinInterval,
+} from "date-fns";
+
+import { Users, Clock, TrendingUp, Calendar } from "lucide-react";
+
+import StatsCard from "@/components/dashboard/StatsCard";
+import ActiveEmployees from "@/components/dashboard/ActiveEmployees";
+import RecentActivity from "@/components/dashboard/RecentActivity";
+import ClockWidget from "@/components/clock/ClockWidget";
+import AlertsPanel from "@/components/alerts/AlertsPanel";
+
+export default function Dashboard() {
+  const queryClient = useQueryClient();
+  const [currentEmployee, setCurrentEmployee] = useState(null);
+
+  /* ------------------ FETCH DATA ------------------ */
+
+  const { data: employees = [] } = useQuery({
+    queryKey: ["employees"],
+    queryFn: async () => {
+      const res = await ntuthuko.get("/employees");
+      return res.data;
+    },
+  });
+
+  const { data: timeEntries = [] } = useQuery({
+    queryKey: ["timeEntries"],
+    queryFn: async () => {
+      const res = await ntuthuko.get("/time-entries?limit=100&sort=-created_date");
+      return res.data;
+    },
+  });
+
+  const { data: currentUser } = useQuery({
+    queryKey: ["currentUser"],
+    queryFn: async () => {
+      const res = await ntuthuko.get("/auth/me");
+      return res.data;
+    },
+  });
+
+  /* ------------------ SET CURRENT EMPLOYEE ------------------ */
+
+  useEffect(() => {
+    if (!currentUser || employees.length === 0) return;
+
+    const found = employees.find(
+      (emp) => emp.email === currentUser.email
+    );
+
+    setCurrentEmployee(found || null);
+  }, [currentUser, employees]);
+
+  /* ------------------ REFRESH AFTER CLOCK ACTION ------------------ */
+
+  const handleClockAction = () => {
+    queryClient.invalidateQueries({ queryKey: ["employees"] });
+    queryClient.invalidateQueries({ queryKey: ["timeEntries"] });
+  };
+
+  /* ------------------ CALCULATIONS ------------------ */
+
+  const today = new Date();
+  const todayStr = format(today, "yyyy-MM-dd");
+
+  const activeEmployees = employees.filter((e) => e.is_clocked_in);
+  const totalEmployees = employees.filter((e) => e.is_active);
+
+  const todayEntries = timeEntries.filter(
+    (entry) => entry.date === todayStr
+  );
+
+  const totalHoursToday = todayEntries.reduce(
+    (sum, entry) => sum + (entry.total_hours || 0),
+    0
+  );
+
+  const totalOvertimeToday = todayEntries.reduce(
+    (sum, entry) => sum + (entry.overtime_hours || 0),
+    0
+  );
+
+  /* ------------------ WEEKLY HOURS ------------------ */
+
+  const weekStart = startOfWeek(today, { weekStartsOn: 1 });
+  const weekEnd = endOfWeek(today, { weekStartsOn: 1 });
+
+  const weeklyEntries = timeEntries.filter((entry) => {
+    const date = parseISO(entry.date);
+    return isWithinInterval(date, { start: weekStart, end: weekEnd });
+  });
+
+  const weeklyHours = weeklyEntries.reduce(
+    (sum, entry) => sum + (entry.total_hours || 0),
+    0
+  );
+
+  /* ------------------ LATE & ABSENT ------------------ */
+
+  const lateToday = todayEntries.filter((e) => e.is_late).length;
+  const absentToday = totalEmployees.length - todayEntries.length;
+
+  /* ------------------ UI ------------------ */
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="max-w-7xl mx-auto p-6 space-y-8">
+
+        {/* HEADER */}
+        <div>
+          <h1 className="text-3xl font-bold">Dashboard</h1>
+          <p className="text-slate-500">
+            {format(today, "EEEE, MMMM d, yyyy")}
+          </p>
+        </div>
+
+        <div className="grid lg:grid-cols-3 gap-8">
+
+          {/* LEFT SIDE */}
+          <div className="lg:col-span-2 space-y-6">
+
+            {/* STATS */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <StatsCard
+                title="Active Now"
+                value={activeEmployees.length}
+                subtitle={`of ${totalEmployees.length}`}
+                icon={Users}
+              />
+
+              <StatsCard
+                title="Hours Today"
+                value={totalHoursToday.toFixed(1)}
+                subtitle="worked"
+                icon={Clock}
+              />
+
+              <StatsCard
+                title="Weekly Hours"
+                value={weeklyHours.toFixed(1)}
+                subtitle="this week"
+                icon={Calendar}
+              />
+
+              <StatsCard
+                title="Overtime Today"
+                value={totalOvertimeToday.toFixed(1)}
+                subtitle="extra"
+                icon={TrendingUp}
+              />
+            </div>
+
+            {/* ACTIVE EMPLOYEES */}
+            <ActiveEmployees
+              employees={employees}
+              timeEntries={timeEntries}
+            />
+
+            {/* RECENT ACTIVITY */}
+            <RecentActivity timeEntries={timeEntries} />
+
+            {/* ALERTS */}
+            <AlertsPanel />
+          </div>
+
+          {/* RIGHT SIDE */}
+          <div className="space-y-6">
+
+            {/* CLOCK */}
+            {currentEmployee ? (
+              <ClockWidget
+                employee={currentEmployee}
+                onClockAction={handleClockAction}
+              />
+            ) : (
+              <div className="bg-white p-6 rounded-xl text-center">
+                <Clock className="mx-auto mb-3 text-slate-300" />
+                <p className="text-slate-500">
+                  No employee profile found
+                </p>
+              </div>
+            )}
+
+            {/* SUMMARY */}
+            <div className="bg-white p-6 rounded-xl space-y-4">
+              <h3 className="font-semibold">Today's Summary</h3>
+
+              <div className="flex justify-between">
+                <span>Check-ins</span>
+                <span>{todayEntries.length}</span>
+              </div>
+
+              <div className="flex justify-between">
+                <span>Late</span>
+                <span className={lateToday ? "text-amber-600" : ""}>
+                  {lateToday}
+                </span>
+              </div>
+
+              <div className="flex justify-between">
+                <span>Absent</span>
+                <span>{absentToday}</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
