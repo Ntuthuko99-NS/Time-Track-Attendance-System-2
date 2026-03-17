@@ -1,0 +1,203 @@
+import { ntuthuko } from "@/api/ntuthukoClient";
+import { format, differenceInMinutes } from "date-fns";
+
+// Check and generate alerts
+export async function checkShiftAlerts() {
+  const now = new Date();
+  const newAlerts = [];
+
+  try {
+    // Fetch data
+    const [shiftsRes, employeesRes, timeEntriesRes, alertsRes] =
+      await Promise.all([
+        ntuthuko.get("/shifts"),
+        ntuthuko.get("/employees"),
+        ntuthuko.get(`/time-entries?date=${format(now, "yyyy-MM-dd")}`),
+        ntuthuko.get("/alerts?status=pending"),
+      ]);
+
+    const shifts = shiftsRes.data || [];
+    const employees = employeesRes.data || [];
+    const timeEntries = timeEntriesRes.data || [];
+    const existingAlerts = alertsRes.data || [];
+
+    const today = format(now, "EEEE").toLowerCase();
+
+    // Get today's active shifts
+    const todaysShifts = shifts.filter(
+      (shift) =>
+        shift.is_active &&
+        shift.days_of_week?.includes(today)
+    );
+
+    for (const shift of todaysShifts) {
+      const [hour, min] = shift.start_time.split(":").map(Number);
+
+      const shiftStart = new Date(now);
+      shiftStart.setHours(hour, min, 0, 0);
+
+      const assignedEmployees = shift.assigned_employees || [];
+
+      for (const assigned of assignedEmployees) {
+        const employee = employees.find(
+          (e) => e.employee_id === assigned.employee_id
+        );
+
+        if (!employee || !employee.is_active) continue;
+
+        const hasClockedIn = timeEntries.find(
+          (t) => t.employee_id === assigned.employee_id
+        );
+
+        const minutesToShift = differenceInMinutes(
+          shiftStart,
+          now
+        );
+
+        // 1. Shift Reminder (30 mins before)
+        if (minutesToShift > 0 && minutesToShift <= 30 && !hasClockedIn) {
+          const exists = existingAlerts.find(
+            (a) =>
+              a.type === "shift_reminder" &&
+              a.employee_id === assigned.employee_id &&
+              a.shift_id === shift.id
+          );
+
+          if (!exists) {
+            newAlerts.push({
+              type: "shift_reminder",
+              employee_id: assigned.employee_id,
+              employee_name: assigned.employee_name,
+              shift_id: shift.id,
+              shift_name: shift.name,
+              message: `Reminder: Your ${shift.name} shift starts at ${shift.start_time}. Clock in on time.`,
+              priority: "medium",
+              target_audience: "employee",
+              scheduled_time: shiftStart.toISOString(),
+            });
+          }
+        }
+
+        // 2. Late Arrival (15 mins after)
+        if (minutesToShift < -15 && !hasClockedIn) {
+          const exists = existingAlerts.find(
+            (a) =>
+              a.type === "late_arrival" &&
+              a.employee_id === assigned.employee_id &&
+              a.shift_id === shift.id
+          );
+
+          if (!exists) {
+            // Employee alert
+            newAlerts.push({
+              type: "late_arrival",
+              employee_id: assigned.employee_id,
+              employee_name: assigned.employee_name,
+              shift_id: shift.id,
+              shift_name: shift.name,
+              message: `You are late for ${shift.name}. Please clock in immediately.`,
+              priority: "high",
+              target_audience: "employee",
+              scheduled_time: now.toISOString(),
+            });
+
+            // Manager alert
+            newAlerts.push({
+              type: "late_arrival",
+              employee_id: assigned.employee_id,
+              employee_name: assigned.employee_name,
+              shift_id: shift.id,
+              shift_name: shift.name,
+              message: `${assigned.employee_name} is late for ${shift.name} (started at ${shift.start_time}).`,
+              priority: "high",
+              target_audience: "manager",
+              scheduled_time: now.toISOString(),
+            });
+          }
+        }
+
+        // 3. Missed Shift (1 hour after)
+        if (minutesToShift < -60 && !hasClockedIn) {
+          const exists = existingAlerts.find(
+            (a) =>
+              a.type === "missed_shift" &&
+              a.employee_id === assigned.employee_id &&
+              a.shift_id === shift.id
+          );
+
+          if (!exists) {
+            newAlerts.push({
+              type: "missed_shift",
+              employee_id: assigned.employee_id,
+              employee_name: assigned.employee_name,
+              shift_id: shift.id,
+              shift_name: shift.name,
+              message: `${assigned.employee_name} missed ${shift.name} shift (${shift.start_time}).`,
+              priority: "high",
+              target_audience: "manager",
+              scheduled_time: now.toISOString(),
+            });
+          }
+        }
+      }
+    }
+
+    // Save alerts
+    for (const alert of newAlerts) {
+      await ntuthuko.post("/alerts", alert);
+    }
+
+    return newAlerts;
+  } catch (error) {
+    console.error("Error checking alerts:", error);
+    return [];
+  }
+}
+
+// Send alert email
+export async function sendAlertEmail(alert, email) {
+  try {
+    await ntuthuko.post("/send-email", {
+      to: email,
+      subject: getAlertSubject(alert),
+      body: formatEmailBody(alert),
+    });
+
+    // Update alert status
+    await ntuthuko.put(`/alerts/${alert.id}`, {
+      status: "sent",
+      sent_at: new Date().toISOString(),
+      sent_via: [...(alert.sent_via || []), "email"],
+    });
+
+    return true;
+  } catch (error) {
+    console.error("Email failed:", error);
+    return false;
+  }
+}
+
+// Email subject
+function getAlertSubject(alert) {
+  const subjects = {
+    shift_reminder: `Shift Reminder: ${alert.shift_name}`,
+    late_arrival: `Late Arrival: ${alert.employee_name}`,
+    missed_shift: `Missed Shift: ${alert.employee_name}`,
+    overtime_warning: `Overtime Warning`,
+    forgot_clock_out: `Clock Out Reminder`,
+  };
+
+  return subjects[alert.type] || "Alert Notification";
+}
+
+// Email body
+function formatEmailBody(alert) {
+  return `
+    <div style="font-family: Arial; padding: 20px;">
+      <h2>${getAlertSubject(alert)}</h2>
+      <p>${alert.message}</p>
+      <hr />
+      <small>This is an automated message.</small>
+    </div>
+  `;
+}
